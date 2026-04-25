@@ -29,3 +29,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# Local upload metadata
+app/uploads/file_hashes.json
