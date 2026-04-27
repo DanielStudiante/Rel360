@@ -32,3 +32,4 @@ htmlcov/
 
 # Local upload metadata
 app/uploads/file_hashes.json
+app/uploads/*
