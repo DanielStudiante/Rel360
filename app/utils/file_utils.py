@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 
 def calculate_file_hash(file_bytes: bytes) -> str:
