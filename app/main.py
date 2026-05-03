@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel, ValidationError
 import json
+from app.services.file_service import save_file, check_duplicate, register_file, UPLOAD_DIR 
 
 from app.utils.file_utils import validate_pdf, calculate_file_hash
 from app.services.file_service import save_file, check_duplicate, register_file
 from app.services.ai_service import process_text_with_ai
 from app.models.nutrition_model import NutritionData
+from app.services.pdf_service import extract_text_from_pdf
 
 app = FastAPI(title="Rel360 API")
 
@@ -56,6 +58,9 @@ async def upload_file(file: UploadFile = File(...)):
 
 class TextRequest(BaseModel):
     text: str
+
+class ExtractRequest(BaseModel):
+    file_id: str
 
 
 def _sanitize_dict(data: object) -> dict:
@@ -110,5 +115,20 @@ async def temp_process_text(payload: TextRequest):
 
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/extract-text")
+async def extract_text(payload: ExtractRequest):
+    try:
+        file_path = UPLOAD_DIR / f"{payload.file_id}.pdf"
+        text = extract_text_from_pdf(file_path)
+        ai_response = process_text_with_ai(text)
+        data_dict = json.loads(ai_response)
+        data_dict = _sanitize_dict(data_dict)
+        nutrition = NutritionData.model_validate(data_dict)
+        return {"success": True, "data": nutrition.model_dump()}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
