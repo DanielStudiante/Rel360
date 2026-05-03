@@ -115,5 +115,6 @@ def process_text_with_ai(text: str) -> str:
     try:
         return _build_gemini_response(text, api_key)
     except Exception as e:
-        print(f"Error en Gemini: {e}")
+        import traceback
+        traceback.print_exc()
         return _build_simulated_response()
