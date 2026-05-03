@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from pydantic import BaseModel, ValidationError
+import json
+
 from app.utils.file_utils import validate_pdf, calculate_file_hash
 from app.services.file_service import save_file, check_duplicate, register_file
+from app.services.ai_service import process_text_with_ai
+from app.models.nutrition_model import NutritionData
 
 app = FastAPI(title="Rel360 API")
 
@@ -45,3 +52,63 @@ async def upload_file(file: UploadFile = File(...)):
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class TextRequest(BaseModel):
+    text: str
+
+
+def _sanitize_dict(data: object) -> dict:
+    """Asegura que el diccionario contiene solo tipos primitivos válidos: str, float, None."""
+    if not isinstance(data, dict):
+        raise ValueError(f"Esperado dict, recibido {type(data).__name__}")
+    
+    sanitized = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            key = str(key)
+        
+        if value is None:
+            sanitized[key] = None
+        elif isinstance(value, str):
+            sanitized[key] = value
+        elif isinstance(value, bool):
+            #sanitized[key] = float(value)
+            raise ValueError("Boolean no permitido")
+        elif isinstance(value, (int, float)):
+            sanitized[key] = float(value)
+        else:
+            raise ValueError(f"Tipo no válido para clave '{key}': {type(value).__name__}")
+    
+    return sanitized
+
+
+@app.post("/process-text")
+async def temp_process_text(payload: TextRequest):
+    try:
+        text = payload.text
+
+        try:
+            ai_response = process_text_with_ai(text)
+            if not isinstance(ai_response, str):
+                raise ValueError(f"AI response debe ser string, recibido {type(ai_response).__name__}")
+            data_dict = json.loads(ai_response)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"JSON inválido desde AI: {e}")
+
+        try:
+            data_dict = _sanitize_dict(data_dict)
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"Datos inválidos después de JSON: {e}")
+
+        try:
+            nutrition = NutritionData.model_validate(data_dict)
+        except ValidationError as ve:
+            raise HTTPException(status_code=500, detail=f"Error de parsing del modelo: {ve}")
+
+        return {"success": True, "data": nutrition.model_dump()}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
