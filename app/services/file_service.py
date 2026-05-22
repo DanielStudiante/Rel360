@@ -1,45 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 import os
 import uuid
+from typing import Optional
+
+from app.database import repositories
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-HASH_DB_PATH = UPLOAD_DIR / "file_hashes.json"
 
-
-def load_file_hashes() -> dict[str, str]:
-    if not HASH_DB_PATH.exists():
-        return {}
-
-    with open(HASH_DB_PATH, "r", encoding="utf-8") as file:
-        content = file.read().strip()
-
-    if not content:
-        return {}
-
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        return {}
-
-    if not isinstance(data, dict):
-        return {}
-
-    return {str(file_hash): str(file_id) for file_hash, file_id in data.items()}
-
-
-def save_file_hashes(file_hash_db: dict[str, str]) -> None:
-    with open(HASH_DB_PATH, "w", encoding="utf-8") as file:
-        json.dump(file_hash_db, file, ensure_ascii=False, indent=2)
-
-# Simulación de base de datos (por ahora)
-file_hash_db = load_file_hashes()
-
-def save_file(file_bytes):
+def save_file(file_bytes: bytes) -> tuple[str, str]:
+    """Guarda el PDF en disco y devuelve (file_id, file_path)."""
     file_id = str(uuid.uuid4())
     file_path = UPLOAD_DIR / f"{file_id}.pdf"
 
@@ -49,10 +22,22 @@ def save_file(file_bytes):
     return file_id, str(file_path)
 
 
-def check_duplicate(file_hash):
-    return file_hash_db.get(file_hash)
+def check_duplicate(file_hash: str) -> Optional[str]:
+    """Retorna file_id si existe un UploadedFile con ese hash en la BD."""
+    try:
+        existing = repositories.get_uploaded_file_by_hash(file_hash)
+        if existing:
+            return existing.id
+        return None
+    except Exception as exc:
+        print(f"[file_service] Error consultando duplicado por hash: {exc}")
+        raise RuntimeError("No se pudo consultar la base de datos para verificar duplicados") from exc
 
 
-def register_file(file_hash, file_id):
-    file_hash_db[file_hash] = file_id
-    save_file_hashes(file_hash_db)
+def register_file(file_id: str, file_name: str, file_hash: str, file_path: str, status: str = "uploaded") -> None:
+    """Registra metadatos del archivo en la BD."""
+    try:
+        repositories.create_uploaded_file(file_id=file_id, file_name=file_name, file_hash=file_hash, file_path=file_path, status=status)
+    except Exception as exc:
+        print(f"[file_service] Error registrando archivo en BD: {exc}")
+        raise
