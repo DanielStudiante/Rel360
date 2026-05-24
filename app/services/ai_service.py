@@ -73,7 +73,7 @@ def _build_gemini_response(text: str, api_key: str) -> str:
     "El JSON debe contener EXACTAMENTE estas claves:\n"
     "producto, lote, humedad, materia_seca, nitrogeno, proteina, "
     "grasa_total, grasa_saturada, grasa_trans_mg_100g, cenizas, fibra_dietaria, "
-    "carbohidratos_totales, azucares_totales, sodio_mg_100g, hierro_mg_100g, "
+    "carbohidratos_totales, azucares_totales, azucares_anadidos, sodio_mg_100g, hierro_mg_100g,"
     "calcio_mg_100g, potasio_mg_100g, zinc_mg_100g, vitamina_a_ug_100g, vitamina_d_ug_100g.\n\n"
 
     "Ejemplo:\n"

@@ -13,7 +13,7 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set in .env")
 
 # Use pool_pre_ping to avoid stale connections
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL + "?sslmode=require", pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 Base = declarative_base()
 

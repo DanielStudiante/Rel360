@@ -17,6 +17,38 @@ app = FastAPI(title="Rel360 API")
 def read_root() -> dict[str, str]:
     return {"message": "Rel360 API activa"}
 
+@app.post("/extract-text")
+async def extract_text(payload: ExtractRequest):
+    """
+    Extrae el texto del PDF y lo guarda en BD.
+    No llama a la IA — eso es responsabilidad de /nutrition-table.
+    """
+    try:
+        existing = repositories.get_extracted_text_by_file_id(payload.file_id)
+        if existing:
+            return {
+                "success": True,
+                "cached": True,
+                "file_id": payload.file_id,
+                "extracted_text": existing.extracted_text,
+            }
+
+        file_path = UPLOAD_DIR / f"{payload.file_id}.pdf"
+        text = extract_text_from_pdf(file_path)
+
+        repositories.create_extracted_text(payload.file_id, text)
+
+        return {
+            "success": True,
+            "cached": False,
+            "file_id": payload.file_id,
+            "extracted_text": text,
+        }
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -33,6 +65,8 @@ async def upload_file(file: UploadFile = File(...)):
             existing_file_id = check_duplicate(file_hash)
         except RuntimeError as exc:
             print(f"[upload] Error verificando duplicado: {exc}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(status_code=503, detail="No se pudo verificar duplicado en BD")
 
         if existing_file_id:
