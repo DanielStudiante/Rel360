@@ -10,6 +10,7 @@ from app.models.nutrition_table_model import NutritionTable
 from app.services.ai_service import process_text_with_ai, process_portion_with_ai
 from app.services.nutrition_table_service import build_nutrition_table
 from app.rules.invima import TipoAlimento
+import logging
 
 
 def _sanitize_dict(data: object) -> dict:
@@ -22,10 +23,12 @@ def _sanitize_dict(data: object) -> dict:
             key = str(key)
         if value is None:
             sanitized[key] = None
+        elif isinstance(value, bool):
+            # Gemini puede devolver true/false en campos numéricos — lo tratamos como ausente
+            logging.warning("Campo '%s' recibido como bool desde IA, se convierte a None", key)
+            sanitized[key] = None
         elif isinstance(value, str):
             sanitized[key] = value
-        elif isinstance(value, bool):
-            raise ValueError("Boolean no permitido")
         elif isinstance(value, (int, float)):
             sanitized[key] = float(value)
         else:

@@ -5,8 +5,8 @@ from app.services.file_service import save_file, check_duplicate, register_file,
 from app.database import repositories
 from app.utils.file_utils import validate_pdf, calculate_file_hash
 from app.services.pdf_service import extract_text_from_pdf
-from app.services.nutrition_service import process_nutrition_text, process_nutrition_text_with_raw
-from app.services.nutrition_service import process_full_nutrition_table
+from app.services.nutrition_service import process_nutrition_text_with_raw
+from app.models.portion_model import PortionInfo
 from app.rules.invima import TipoAlimento
 from app.models.request_models import TextRequest, ExtractRequest, NutritionTableRequest
 
@@ -68,51 +68,17 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/process-text")
 async def process_text(payload: TextRequest):
     """
-    Recibe texto plano y retorna NutritionData crudo.
-    Útil para pruebas sin PDF.
+    Recibe texto plano y retorna NutritionData parseado.
+    Endpoint de prueba — no persiste en BD (no hay file_id asociado).
+    Para flujo completo con persistencia usar /upload → /extract-text → /nutrition-table.
     """
     try:
-        nutrition = process_nutrition_text(payload.text)
+        nutrition, _ = process_nutrition_text_with_raw(payload.text)
         return nutrition.model_dump()
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/extract-text")
-async def extract_text(payload: ExtractRequest):
-    """
-    Extrae el texto del PDF y lo guarda en BD.
-    No llama a la IA — eso es responsabilidad de /nutrition-table.
-    """
-    try:
-        # Si ya fue extraído, retornar el texto guardado
-        existing = repositories.get_extracted_text_by_file_id(payload.file_id)
-        if existing:
-            return {
-                "success": True,
-                "cached": True,
-                "file_id": payload.file_id,
-                "extracted_text": existing.extracted_text,
-            }
-
-        file_path = UPLOAD_DIR / f"{payload.file_id}.pdf"
-        text = extract_text_from_pdf(file_path)
-
-        repositories.create_extracted_text(payload.file_id, text)
-
-        return {
-            "success": True,
-            "cached": False,
-            "file_id": payload.file_id,
-            "extracted_text": text,
-        }
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/nutrition-table")
@@ -120,8 +86,9 @@ async def get_nutrition_table(payload: NutritionTableRequest):
     """
     Construye la tabla nutricional completa con sellos INVIMA.
     Depende de que /extract-text ya haya sido llamado antes.
+    Reutiliza el NutritionData guardado en BD para no rellamar a Gemini.
     """
-    # 1. Cache: ya tiene tabla calculada?
+    # 1. Cache completo: ya tiene tabla calculada?
     try:
         cached = repositories.get_nutrition_result_by_file_id(payload.file_id)
         if cached and cached.nutrition_json:
@@ -143,19 +110,39 @@ async def get_nutrition_table(payload: NutritionTableRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error obteniendo texto: {exc}")
 
-    # 3. Construir tabla nutricional completa
-    tipo = TipoAlimento.LIQUIDO if payload.tipo_alimento == "liquido" else TipoAlimento.SOLIDO
+    # 3. Intentar reusar NutritionData ya guardado en BD
+    nutrition_data = repositories.get_nutrition_data_by_file_id(payload.file_id)
+    nutrition_raw: str
 
+    if nutrition_data is not None:
+        # Tenemos NutritionData en BD — no llamamos a Gemini para esto
+        import json
+        nutrition_raw = json.dumps(nutrition_data.model_dump(), ensure_ascii=False)
+    else:
+        # Fallback: extraer desde IA
+        from app.services.nutrition_service import process_nutrition_text_with_raw
+        nutrition_data, nutrition_raw = process_nutrition_text_with_raw(text)
+
+    # 4. Porción: siempre desde IA (no está cacheada aún)
+    from app.services.ai_service import process_portion_with_ai
+    import json
+    portion_raw = process_portion_with_ai(text)
     try:
-        table, nutrition_raw, _ = process_full_nutrition_table(
-            text=text,
-            tipo_alimento=tipo,
-            contiene_edulcorantes=payload.contiene_edulcorantes,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        portion_dict = json.loads(portion_raw)
+        portion_info = PortionInfo.model_validate(portion_dict)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error parseando porción: {exc}")
 
-    # 4. Guardar resultado en BD
+    # 5. Construir tabla
+    from app.services.nutrition_table_service import build_nutrition_table
+    table = build_nutrition_table(
+        data=nutrition_data,
+        porcion=portion_info,
+        tipo_alimento=payload.tipo_alimento,
+        contiene_edulcorantes=payload.contiene_edulcorantes,
+    )
+
+    # 6. Guardar resultado en BD
     table_dict = table.model_dump()
     try:
         from app.services.ai_service import GEMINI_MODEL_NAME

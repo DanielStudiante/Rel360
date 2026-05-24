@@ -8,6 +8,7 @@ from sqlalchemy import select, desc
 
 from app.database.database import SessionLocal, create_tables
 from app.database.models import UploadedFile, ExtractedText, NutritionResult
+from app.models.nutrition_model import NutritionData
 
 
 def _ensure_tables():
@@ -109,3 +110,17 @@ def get_extracted_text_by_file_id(file_id: str) -> Optional[ExtractedText]:
         raise
     finally:
         db.close()
+
+def get_nutrition_data_by_file_id(file_id: str) -> Optional[NutritionData]:
+    """
+    Trae el NutritionData ya parseado desde el nutrition_json guardado en BD.
+    Retorna None si no existe registro o si el JSON no es deserializable.
+    """
+    row = get_nutrition_result_by_file_id(file_id)
+    if row is None or not row.nutrition_json:
+        return None
+    try:
+        return NutritionData.model_validate(row.nutrition_json)
+    except Exception:
+        logging.exception("Error deserializando nutrition_json para file_id=%s", file_id)
+        return None
