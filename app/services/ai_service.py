@@ -118,3 +118,49 @@ def process_text_with_ai(text: str) -> str:
         import traceback
         traceback.print_exc()
         return _build_simulated_response()
+    
+def _build_simulated_portion_response() -> str:
+    result = {
+        "descripcion": "1 Unidad (10g)",
+        "porcion_g": 10.0,
+        "porciones_por_envase": 15.0,
+    }
+    return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+
+
+def _build_gemini_portion_response(text: str, api_key: str) -> str:
+    genai = import_module("google.genai")
+    prompt = (
+        "Eres un sistema experto en etiquetado nutricional colombiano.\n\n"
+        "Extrae la información de porción del siguiente texto y devuelve EXCLUSIVAMENTE un JSON válido.\n"
+        "NO incluyas explicaciones, texto adicional ni markdown.\n\n"
+        "REGLAS:\n"
+        "1. Busca 'Tamaño por porción', 'Tamaño de la porción', 'Número de porciones por envase'.\n"
+        "2. Extrae el peso en gramos (ej: '1 Unidad (10g)' → porcion_g: 10.0).\n"
+        "3. Si no hay info de porción, usa porcion_g: 100.0.\n"
+        "4. Convierte comas decimales a punto.\n\n"
+        "Claves del JSON: descripcion (str o null), porcion_g (float), porciones_por_envase (float o null).\n\n"
+        f"Texto:\n{text}"
+    )
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(model=GEMINI_MODEL_NAME, contents=prompt)
+    response_text = getattr(response, "text", None)
+    if not response_text:
+        raise ValueError("Gemini no devolvió texto para porción")
+    json_text = _extract_json_text(str(response_text))
+    parsed = json.loads(json_text)
+    if not isinstance(parsed, dict):
+        raise ValueError("Gemini no devolvió dict para porción")
+    return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
+def process_portion_with_ai(text: str) -> str:
+    api_key = os.getenv("REL360_API_KEY")
+    if not api_key:
+        return _build_simulated_portion_response()
+    try:
+        return _build_gemini_portion_response(text, api_key)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return _build_simulated_portion_response()

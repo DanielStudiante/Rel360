@@ -26,3 +26,5 @@ class NutritionData(BaseModel):
     zinc_mg_100g: float | None = None
     vitamina_a_ug_100g: float | None = None
     vitamina_d_ug_100g: float | None = None
+    azucares_anadidos: float | None = None     # g/100g
+    grasa_trans_mg_100g: float | None = None   # mg/100g (el lab reporta en mg)

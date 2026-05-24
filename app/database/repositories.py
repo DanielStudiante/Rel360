@@ -97,3 +97,15 @@ def get_nutrition_result_by_file_id(file_id: str) -> Optional[NutritionResult]:
         raise
     finally:
         db.close()
+
+def get_extracted_text_by_file_id(file_id: str) -> Optional[ExtractedText]:
+    db = SessionLocal()
+    try:
+        stmt = select(ExtractedText).where(ExtractedText.file_id == file_id)
+        res = db.execute(stmt).scalar_one_or_none()
+        return res
+    except SQLAlchemyError:
+        logging.exception("DB error fetching extracted text")
+        raise
+    finally:
+        db.close()
