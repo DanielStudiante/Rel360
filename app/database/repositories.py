@@ -9,6 +9,7 @@ from sqlalchemy import select, desc
 from app.database.database import SessionLocal, create_tables
 from app.database.models import UploadedFile, ExtractedText, NutritionResult
 from app.models.nutrition_model import NutritionData
+from app.database.models import User
 
 
 def _ensure_tables():
@@ -124,3 +125,39 @@ def get_nutrition_data_by_file_id(file_id: str) -> Optional[NutritionData]:
     except Exception:
         logging.exception("Error deserializando nutrition_json para file_id=%s", file_id)
         return None
+    
+def get_user_by_email(email: str) -> Optional[User]:
+    db = SessionLocal()
+    try:
+        stmt = select(User).where(User.email == email)
+        return db.execute(stmt).scalar_one_or_none()
+    except SQLAlchemyError:
+        logging.exception("DB error fetching user by email")
+        raise
+    finally:
+        db.close()
+
+
+def create_user(
+    email: str,
+    hashed_password: str,
+    full_name: Optional[str] = None,
+) -> User:
+    _ensure_tables()
+    db = SessionLocal()
+    try:
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            full_name=full_name,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    except SQLAlchemyError:
+        db.rollback()
+        logging.exception("DB error creating user")
+        raise
+    finally:
+        db.close()

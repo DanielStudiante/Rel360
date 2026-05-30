@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -8,8 +8,24 @@ from sqlalchemy.orm import relationship
 from app.database.database import Base
 
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── Archivos y nutrición ──────────────────────────────────────────────────────
+
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"
+
     id = Column(String, primary_key=True)
     file_name = Column(String, nullable=False)
     file_hash = Column(String, nullable=False, unique=True, index=True)
@@ -23,6 +39,7 @@ class UploadedFile(Base):
 
 class ExtractedText(Base):
     __tablename__ = "extracted_texts"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     file_id = Column(String, ForeignKey("uploaded_files.id"), nullable=False, unique=True)
     extracted_text = Column(Text, nullable=False)
@@ -33,6 +50,7 @@ class ExtractedText(Base):
 
 class NutritionResult(Base):
     __tablename__ = "nutrition_results"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     file_id = Column(String, ForeignKey("uploaded_files.id"), nullable=False, index=True)
     producto = Column(String, nullable=True)
